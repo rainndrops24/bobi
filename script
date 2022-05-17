@@ -1,0 +1,575 @@
+'use strict';
+
+let agario = function() {
+
+  document.addEventListener('keydown', (event) => {
+
+    if (event.keyCode == 87 || event.keyCode == 38) {
+      viewY -= 5
+    }
+    if (event.keyCode == 83 || event.keyCode == 40) {
+      viewY += 5
+    }
+    if (event.keyCode == 65 || event.keyCode == 37) {
+      viewX -= 5
+    }
+    if (event.keyCode == 68 || event.keyCode == 39) {
+      viewX += 5
+    }
+
+    if (event.keyCode == 90) {
+      zoom *= 1.25
+    }
+    if (event.keyCode == 88) {
+      zoom /= 1.25
+    }
+  }, false);
+
+  let Virus = function(x, y) {
+    this.x = x
+    this.y = y
+    this.mass = 100
+  }
+
+  let Pellet = function(x, y) {
+    this.x = x
+    this.y = y
+    this.mass = 1
+    this.color = colorArray[Math.floor(Math.random() * colorArray.length)]
+  }
+
+  //pellets gain mass over time
+  Pellet.prototype.update = function() {
+    this.mass += 0.001 //is this the right amount of time?
+    if (this.mass > 5) {
+      this.mass = 5
+    }
+  }
+
+  let colorArray = ['#FF6633', '#FFB399', '#FF33FF', '#FFFF99', '#00B3E6',
+    '#E6B333', '#3366E6', '#999966', '#99FF99', '#B34D4D',
+    '#80B300', '#809900', '#E6B3B3', '#6680B3', '#66991A',
+    '#FF99E6', '#CCFF1A', '#FF1A66', '#E6331A', '#33FFCC',
+    '#66994D', '#B366CC', '#4D8000', '#B33300', '#CC80CC',
+    '#66664D', '#991AFF', '#E666FF', '#4DB3FF', '#1AB399',
+    '#E666B3', '#33991A', '#CC9999', '#B3B31A', '#00E680',
+    '#4D8066', '#809980', '#E6FF80', '#1AFF33', '#999933',
+    '#FF3380', '#CCCC00', '#66E64D', '#4D80CC', '#9900B3',
+    '#E64D66', '#4DB380', '#FF4D4D', '#99E6E6', '#6666FF'];
+
+  //determines the radius of a sphere based on the mass
+  function objectRadius(obj) {
+    return 4 + Math.sqrt(obj.mass) * 6
+  }
+
+  //if your mass is more than 1.1 as big as the opponent, and
+  //your radius is at least 1.75 the distance between you and the opponent,
+  //then you can eat them!
+  function aCanEatB(a, b) {
+    return a.mass > b.mass * 1.1 && objectRadius(a) > Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
+  }
+
+  function aIsBigEnoughToEatB(a, b) {
+    return a.mass > b.mass * 1.1;
+  }
+
+  function getZoom() {
+    return zoom;
+  }
+
+  function speedMultiplierFor(obj) {
+    return 22.2 * Math.pow(obj.mass, -0.439)
+  }
+
+  function getWorldX() {
+    return worldX
+  }
+
+  function getWorldY() {
+    return worldY
+  }
+
+  function getWorldWidth() {
+    return worldWidth
+  }
+
+  function getWorldHeight() {
+    return worldWidth
+  }
+
+  function addTrackingPlayer(i) {
+    trackingPlayers.push(i)
+  }
+
+  function addTrackingPellet(i) {
+    trackingPellets.push(i)
+  }
+
+
+  let canvas
+  let ctx
+
+  let worldX = 0
+  let worldY = 0
+  let worldWidth = 4000
+  let worldHeight = 4000
+
+  let viewWidth = 500
+  let viewHeight = 500
+  let viewX = 0
+  let viewY = 0
+  let zoom = 0.125;
+
+  let shrinkSpeed = 0.1;
+
+  let allPellets = []
+  let allPlayers = []
+  let viruses = []
+
+  let deadPlayers = []
+  let trackingPlayers = []
+  let trackingPellets = []
+  
+  const PLAYER_MASS = 10
+
+  allPlayers.push(new HumanPlayer(worldWidth / 2, worldHeight / 2, PLAYER_MASS))
+  allPlayers.push(new WallHugger(worldWidth / 2, worldHeight / 2, PLAYER_MASS))
+  allPlayers.push(new TaxiCab(worldWidth / 2, worldHeight / 2, PLAYER_MASS))
+  allPlayers.push(new LeroyJenkins(worldWidth / 2, worldHeight / 2, PLAYER_MASS))
+  allPlayers.push(new RandomWalk(worldWidth / 2, worldHeight / 2, PLAYER_MASS))
+  allPlayers.push(new DavidBodansky(worldWidth / 2, worldHeight / 2, PLAYER_MASS))
+  
+
+  
+  for (let i = 0; i < allPlayers.length; i++) {
+    let player = allPlayers[i]
+    player.lives = 3
+    player.x = worldWidth / 2
+    player.y = worldHeight / 2
+    player.mass = PLAYER_MASS
+    player.bestMass = PLAYER_MASS
+    player.color = colorArray[i % colorArray.length] + "80"
+    
+    player.x += Math.cos(2*Math.PI *i / allPlayers.length) * worldWidth/2;
+    player.y += Math.sin(2*Math.PI *i / allPlayers.length) * worldWidth/2;
+  }
+
+  for (let i = 0; i < 300; i++) {
+    let pellet = new Pellet(Math.floor(worldWidth * Math.random()), Math.floor(worldHeight * Math.random()))
+    spawnPellet(pellet)
+    allPellets.push(pellet)
+  }
+
+  for(let i = 0; i < 4; i++) {
+    let angle = i*Math.PI/2
+    let virus = new Virus(worldWidth / 2, worldHeight / 2)
+    spawnVirus(virus, angle)
+    viruses.push(virus)
+  }
+
+  window.onload = init
+
+  function spawnPlayer(player) {
+    //find a spot not near anyone else
+
+    player.mass = PLAYER_MASS
+
+    player.x = Math.random() * worldWidth + worldX
+    player.y = Math.random() * worldHeight + worldY
+    let bad = true
+
+    if (bad) {
+      bad = false;
+      for (let i = 0; i < allPlayers.length; i++) {
+        if (allPlayers[i] != player && aCanEatB(allPlayers[i], player)) {
+          bad = true
+          break
+        }
+      }
+
+      if (bad) {
+        player.x = Math.random() * worldWidth + worldX
+        player.y = Math.random() * worldHeight + worldY
+      }
+    }
+  }
+
+  function spawnPellet(pellet) {
+    //find a spot not near anyone else
+
+    pellet.mass = 1
+
+    pellet.x = Math.random() * worldWidth + worldX
+    pellet.y = Math.random() * worldHeight + worldY
+    let bad = true
+
+    if (bad) {
+      bad = false;
+      for (let i = 0; i < allPlayers.length; i++) {
+        if (aCanEatB(allPlayers[i], pellet)) {
+          bad = true
+          break
+        }
+      }
+
+      if (bad) {
+        pellet.x = Math.random() * worldWidth + worldX
+        pellet.y = Math.random() * worldHeight + worldY
+      }
+    }
+  }
+
+  function spawnVirus(virus, angle) {
+    //find a spot not near anyone else
+
+    virus.x = worldWidth/2 * Math.cos(angle) / 2 + worldWidth/2
+    virus.y = worldHeight/2 * Math.sin(angle) / 2 + worldHeight/2
+    let bad = true
+
+    if (bad) {
+      bad = false;
+      for (let i = 0; i < allPlayers.length; i++) {
+        if (aCanEatB(allPlayers[i], virus)) {
+          bad = true
+          break
+        }
+      }
+
+      if(!bad)
+      {
+        for (let i = 0; i < allPellets.length; i++) {
+          if (aCanEatB(virus, allPellets[i])) {
+            bad = true
+            break
+          }
+        }
+      }
+
+      if(!bad)
+      {
+        for (let i = 0; i < viruses.length; i++) {
+          if (aCanEatB(virus, viruses[i])) {
+            bad = true
+            break
+          }
+        }
+      }
+
+
+      if (bad) {
+        virus.x = worldWidth/2 * Math.cos(angle) / 2 + worldWidth/2
+        virus.y = worldHeight/2 * Math.sin(angle) / 2 + worldHeight/2
+      }
+    }
+  }
+
+  function init() {
+    canvas = document.getElementById('viewport')
+    ctx = canvas.getContext('2d')
+
+    // Start the first frame request
+    window.requestAnimationFrame(gameLoop)
+  }
+
+  function gameLoop(timeStamp) {
+    draw()
+    
+    for (let i = 0; i < allPellets.length; i++) {
+      allPellets[i].update()
+    }
+
+    let savedPlayers = JSON.stringify(allPlayers);
+    let savedPellets = JSON.stringify(allPellets);
+    let savedViruses = JSON.stringify(viruses);
+    let tempPlayers = JSON.parse(savedPlayers)
+    let tempPellets = JSON.parse(savedPellets)
+    let tempViruses = JSON.parse(savedViruses)
+
+    //these objects are now immutable
+    Object.freeze(tempPlayers);
+    Object.freeze(tempPellets);
+    Object.freeze(tempViruses);
+
+    for(let i = 0; i < tempPlayers.length; i++) {
+      Object.freeze(tempPlayers[i])
+    }
+
+    for(let i = 0; i < tempPellets.length; i++) {
+      Object.freeze(tempPellets[i])
+    }
+
+    for(let i = 0; i < tempViruses.length; i++) {
+      Object.freeze(tempViruses[i])
+    }
+
+    let choices = []
+
+    for (let i = 0; i < allPlayers.length; i++) {
+      try {
+        choices.push(allPlayers[i].update(tempPlayers, tempPellets, tempViruses))
+
+        allPlayers[i].x = tempPlayers[i].x;
+        allPlayers[i].y = tempPlayers[i].y;
+        allPlayers[i].mass = tempPlayers[i].mass;
+        
+      }
+      catch(err) {
+        choices.push({angle:0, speed:0});
+        console.log(allPlayers[i].constructor.name + " had an error while updating: " + err.message);
+      }
+    }
+
+    //now apply their choices
+    for (let i = 0; i < choices.length; i++) {
+      let speed = choices[i].speed
+      let angle = choices[i].angle
+
+      if (typeof speed !== 'number') {
+        speed = 0;
+      }
+      else if (speed < 0) {
+        speed = 0;
+      }
+      else if (speed > 1) {
+        speed = 1;
+      }
+
+      speed *= speedMultiplierFor(allPlayers[i])
+
+      if (typeof angle !== 'number') {
+        angle = 0;
+      }
+
+      allPlayers[i].x += speed * Math.cos(angle);
+      allPlayers[i].y += speed * Math.sin(angle);
+
+      if (allPlayers[i].x <= worldX) {
+        allPlayers[i].x = worldX
+      }
+      else if (allPlayers[i].x >= worldX + worldWidth) {
+        allPlayers[i].x = worldWidth + worldX
+      }
+
+      if (allPlayers[i].y <= worldY) {
+        allPlayers[i].y = worldY
+      }
+      else if (allPlayers[i].y >= worldY + worldHeight) {
+        allPlayers[i].y = worldHeight + worldY
+      }
+
+      //should lose 0.2% of mass per second
+      //should be getting 60 frames
+      allPlayers[i].mass *= 0.99996663;
+    }
+
+    //now process eating pellets
+    for (let i = 0; i < allPlayers.length; i++) {
+
+      for (let j = allPellets.length - 1; j >= 0; j--) {
+
+        //eat!
+        if (aCanEatB(allPlayers[i], allPellets[j])) {
+          allPlayers[i].mass += allPellets[j].mass
+
+          //allPellets.splice(j, 1)
+          spawnPellet(allPellets[j])
+        }
+        else if(allPellets[j].x < worldX || allPellets[j].y < worldY || allPellets[j].x + objectRadius(allPellets[j]) > worldX + worldWidth || allPellets[j].y + objectRadius(allPellets[j]) > worldY + worldHeight) {
+
+            spawnPellet(allPellets[j])
+          
+        }
+      }
+
+    }
+
+    for (let i = 0; i < allPlayers.length; i++) {
+
+      for (let j = allPlayers.length - 1; j >= 0; j--) {
+
+        //eat!
+        if (j != i && aCanEatB(allPlayers[i], allPlayers[j])) {
+          allPlayers[i].mass += allPlayers[j].mass
+
+          //do we actually delete them, or should they respawn?
+
+
+          allPlayers[j].lives--;
+          if (allPlayers[j].mass > allPlayers[j].bestMass) {
+            allPlayers[j].bestMass = allPlayers[j].mass
+          }
+
+          if (allPlayers[j].lives <= 0) {
+
+            let livingPlayerWithSameName = false;
+            for(let k = 0; k < allPlayers.length; k++) {
+              if(k != j && allPlayers[k].constructor.name == allPlayers[j].constructor.name) {
+                livingPlayerWithSameName = true;
+              }
+            }
+
+            //only add to dead list if no other player has the same name
+            if(!livingPlayerWithSameName)
+            {
+              deadPlayers.push(allPlayers[j])
+
+            
+              deadPlayers.sort(function(a, b) {
+                return b.bestMass - a.bestMass
+              })
+            }
+
+            allPlayers.splice(j, 1)
+
+            if (j < i) {
+              i--
+            }
+          }
+          else {
+            spawnPlayer(allPlayers[j])
+          }
+        }
+      }
+
+    }
+
+    for (let i = 0; i < viruses.length; i++) {
+      for (let j = allPlayers.length - 1; j >= 0; j--) {
+
+        //we're big... so split!
+        if(aCanEatB(allPlayers[j], viruses[i])) {
+          let clone = Object.create(allPlayers[j])
+          
+          let rad = objectRadius(allPlayers[j])
+          clone.mass /= 2
+          allPlayers[j].mass /= 2
+          allPlayers[j].x -= rad
+          allPlayers[j].y -= rad
+          clone.x += rad
+          clone.y += rad
+
+          //clones only have one life to live
+          clone.lives = 1;
+
+          allPlayers.push(clone)
+        }
+      }
+    }
+
+    let data = document.getElementById('data')
+    data.innerHTML = ""
+
+    let results = document.getElementById('results')
+    results.innerHTML = ""
+
+    allPlayers.sort(function(a, b) {
+      return b.mass - a.mass
+    })
+
+    for (let i = 0; i < allPlayers.length; i++) {
+      data.innerHTML += "<b><span style='background-color:" + allPlayers[i].color + ";''>" + (allPlayers[i].constructor.name) + " " + allPlayers[i].mass.toFixed(2) + "</span></b><br>"
+    }
+
+    for (let i = 0; i < deadPlayers.length; i++) {
+      results.innerHTML += "<b><span style='background-color:" + deadPlayers[i].color + ";''>" + (deadPlayers[i].constructor.name) + " " + deadPlayers[i].bestMass.toFixed(2) + "</span></b><br>"
+    }
+
+    worldWidth -= 2*shrinkSpeed;
+    worldHeight -= 2*shrinkSpeed;
+    worldX += shrinkSpeed;
+    worldY += shrinkSpeed;
+
+
+    // Keep requesting new frames
+    window.requestAnimationFrame(gameLoop);
+  }
+
+  function draw() {
+
+    ctx.fillStyle = "white"
+    ctx.fillRect(0, 0, viewWidth, viewHeight)
+
+    for (let i = 0; i < allPellets.length; i++) {
+      ctx.fillStyle = allPellets[i].color
+      ctx.beginPath()
+      let rad = objectRadius(allPellets[i])
+      ctx.arc((allPellets[i].x - viewX) * zoom, (allPellets[i].y - viewY) * zoom, rad * zoom, 0, 2 * Math.PI, false)
+      ctx.fill()
+
+      ctx.beginPath()
+      ctx.strokeStyle = "black"
+      ctx.arc((allPellets[i].x - viewX) * zoom, (allPellets[i].y - viewY) * zoom, rad * zoom, 0, 2 * Math.PI, false)
+      ctx.stroke()
+
+      if(trackingPellets.indexOf(i) != -1) {
+        ctx.strokeStyle = "red"
+        ctx.lineWidth = 3;
+        ctx.beginPath()
+        let rad = objectRadius(allPellets[i]) + 30;
+        ctx.arc((allPellets[i].x - viewX) * zoom, (allPellets[i].y - viewY) * zoom, rad * zoom, 0, 2 * Math.PI, false)
+        ctx.stroke()
+        ctx.lineWidth = 1
+      }
+    }
+
+    for (let i = 0; i < allPlayers.length; i++) {
+      ctx.fillStyle = allPlayers[i].color
+      ctx.beginPath()
+      let rad = objectRadius(allPlayers[i])
+      ctx.arc((allPlayers[i].x - viewX) * zoom, (allPlayers[i].y - viewY) * zoom, rad * zoom, 0, 2 * Math.PI, false)
+      ctx.fill()
+
+      ctx.beginPath()
+      ctx.strokeStyle = "black"
+      ctx.arc((allPlayers[i].x - viewX) * zoom, (allPlayers[i].y - viewY) * zoom, rad * zoom, 0, 2 * Math.PI, false)
+      ctx.stroke()
+
+      if(trackingPlayers.indexOf(i) != -1) {
+        ctx.strokeStyle = "red"
+        ctx.lineWidth = 3;
+        ctx.beginPath()
+        let rad = objectRadius(allPlayers[i]) + 30;
+        ctx.arc((allPlayers[i].x - viewX) * zoom, (allPlayers[i].y - viewY) * zoom, rad * zoom, 0, 2 * Math.PI, false)
+        ctx.stroke()
+        ctx.lineWidth = 1
+      }
+    }
+
+    //viruses are a random color thing
+    for (let i = 0; i < viruses.length; i++) {
+      ctx.fillStyle = colorArray[Math.floor(Math.random()*colorArray.length)]
+      ctx.beginPath()
+      let rad = objectRadius(viruses[i])
+      ctx.arc((viruses[i].x - viewX) * zoom, (viruses[i].y - viewY) * zoom, rad * zoom, 0, 2 * Math.PI, false)
+      ctx.fill()
+
+      ctx.beginPath()
+      ctx.strokeStyle = "black"
+      ctx.arc((viruses[i].x - viewX) * zoom, (viruses[i].y - viewY) * zoom, rad * zoom, 0, 2 * Math.PI, false)
+      ctx.stroke()
+    }
+
+    ctx.fillStyle = "black"
+    ctx.beginPath()
+    ctx.rect((worldX - viewX) * zoom, (worldY - viewY) * zoom, worldWidth * zoom, worldHeight * zoom)
+    ctx.stroke()
+
+    //reset
+    trackingPlayers = []
+    trackingPellets = []
+  }
+
+  return Object.freeze({
+    objectRadius: objectRadius,
+    aIsBigEnoughToEatB: aIsBigEnoughToEatB,
+    getZoom: getZoom,
+    getWorldX: getWorldX,
+    getWorldY: getWorldY,
+    getWorldWidth: getWorldWidth,
+    getWorldHeight: getWorldHeight,
+    speedMultiplierFor: speedMultiplierFor,
+    addTrackingPellet: addTrackingPellet,
+    addTrackingPlayer: addTrackingPlayer
+  })
+
+}();
