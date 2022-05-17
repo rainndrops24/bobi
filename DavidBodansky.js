@@ -12,20 +12,17 @@ DavidBodansky.prototype.update = function(players, pellets, viruses) {
   //speed is between 0 and 1
   //you naturally get slower the larger your cell gets!
 
-
-  
-  
   //if player mass < this.mass
   //go towards player
   if (players.length > 0) {
     //get the angle to player 1
     let ang = Math.atan2(players[0].y - this.y, players[0].x - this.x)
     //https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/atan2
-    
+
     if (players[0].mass < this.mass) {
       return { angle: ang, speed: 1 }
     }
-    
+
   }
 
   if (pellets.length > 0) {
@@ -34,11 +31,10 @@ DavidBodansky.prototype.update = function(players, pellets, viruses) {
     let xDist = Math.abs(pellet.x - this.x)
     let yDist = Math.abs(pellet.y - this.y)
 
-    //how fast we will move next
-    let radius = agario.objectRadius(this)
+    let rad = agario.objectRadius(this)
 
-    let xLinedUp = pellet.x < this.x + radius && pellet.x > this.x - radius
-    let yLinedUp = pellet.y < this.y + radius && pellet.y > this.y - radius
+    let xLinedUp = pellet.x < this.x + rad && pellet.x > this.x - rad
+    let yLinedUp = pellet.y < this.y + rad && pellet.y > this.y - rad
 
     if (xLinedUp) {
       if (pellet.y < this.y) {
